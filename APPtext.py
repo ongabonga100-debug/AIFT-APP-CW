@@ -107,7 +107,11 @@ if st.button("Execute Deep Peer Analysis"):
         st.warning("Please upload at least one report.")
     else:
         with st.spinner("Extracting and Benchmarking Firms..."):
-            results = asyncio.run(asyncio.gather(*[process_report(f, LLAMA_CLOUD_KEY, GEMINI_API_KEY) for f in files]))
+            # Update this line to use the safe loop helper
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            results = loop.run_until_complete(asyncio.gather(*[process_report(f, LLAMA_CLOUD_KEY, GEMINI_API_KEY) for f in files]))
+            
             df = pd.DataFrame(results).sort_values(["company_name", "fiscal_year"])
             
             # --- DATA EXPORT ---
