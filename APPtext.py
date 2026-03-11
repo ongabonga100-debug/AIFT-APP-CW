@@ -5,6 +5,7 @@ import tempfile
 import os
 import requests
 import time
+import json
 import google.generativeai as genai
 import plotly.express as px
 import plotly.graph_objects as go
@@ -29,7 +30,6 @@ class UniversalFinancials(BaseModel):
     operating_cash_flow: float
 
 # --- 2. 2025-2026 SECTOR BENCHMARKS ---
-# Data-grounded norms for 2026 strategic alignment
 BENCHMARKS = {
     "Banking": {"ROE_%": 14.1, "Net_Margin_%": 30.8, "Asset_Turnover": 0.1, "Debt_Equity": 8.5},
     "Technology": {"ROE_%": 18.5, "Net_Margin_%": 19.1, "Asset_Turnover": 0.8, "Debt_Equity": 0.2},
@@ -44,7 +44,7 @@ async def process_report(uploaded_file, llama_key, gemini_key):
         tmp.write(uploaded_file.getvalue())
         path = tmp.name
     try:
-        # LlamaParse Extraction with Polling
+        # LlamaParse Extraction
         headers = {"accept": "application/json", "Authorization": f"Bearer {llama_key}"}
         upload = requests.post("https://api.cloud.llamaindex.ai/api/parsing/upload", 
                                headers=headers, files={"file": open(path, "rb")})
@@ -57,17 +57,31 @@ async def process_report(uploaded_file, llama_key, gemini_key):
         
         raw_md = requests.get(f"https://api.cloud.llamaindex.ai/api/parsing/job/{job_id}/result/markdown", headers=headers).json()["markdown"]
         
-        # Gemini Universal Mapping
+        # Gemini Extraction with strict JSON guidance
         genai.configure(api_key=gemini_key)
         model = genai.GenerativeModel("gemini-2.5-flash")
         prompt = f"""
-        Act as a Senior Quant. Extract metrics into JSON. 
-        Banks: Revenue=Interest Earned+Other, Debt=Borrowings. 
-        Corps: Standard mapping.
-        Markdown: {raw_md[:60000]}
+        Extract financial metrics from the following markdown. 
+        Return ONLY a FLAT JSON object. Do not nest it inside keys like 'financials'.
+        If a value is missing, use 0.0.
+        
+        Fields required: company_name (str), fiscal_year (int), industry_category (str), total_revenue (float), 
+        operating_expenses (float), net_income (float), total_assets (float), total_liabilities (float), 
+        total_equity (float), total_debt (float), operating_cash_flow (float).
+        
+        Markdown text:
+        {raw_md[:60000]}
         """
         response = model.generate_content(prompt, generation_config=genai.GenerationConfig(response_mime_type="application/json"))
-        data = UniversalFinancials.model_validate_json(response.text)
+        
+        # Robust validation: Handle nested JSON if Gemini ignores instructions
+        raw_json = json.loads(response.text)
+        if isinstance(raw_json, dict) and len(raw_json) == 1:
+            first_val = next(iter(raw_json.values()))
+            if isinstance(first_val, dict):
+                raw_json = first_val
+                
+        data = UniversalFinancials.model_validate(raw_json)
         
         # Ratio Engineering
         m = data.model_dump()
@@ -80,64 +94,54 @@ async def process_report(uploaded_file, llama_key, gemini_key):
     finally:
         os.unlink(path)
 
-# --- 4. AI COMPARATIVE ANALYST ---
+# --- 4. AI ANALYST ---
 def generate_ai_analysis(df: pd.DataFrame, gemini_key: str) -> str:
     genai.configure(api_key=gemini_key)
     model = genai.GenerativeModel("gemini-2.5-flash")
     industry = df['industry_category'].iloc[-1]
     bench = BENCHMARKS.get(industry, BENCHMARKS["Manufacturing"])
     
-    prompt = f"""
-    Perform a CFO-level comparative analysis for these entities. 
-    Industry Norms (2026): ROE {bench['ROE_%']}%, Margin {bench['Net_Margin_%']}%.
-    Identify the Efficiency Leader and the Risk Leader.
-    Data: {df.to_markdown(index=False)}
-    """
+    prompt = f"Perform a comparative analysis for these entities. Industry Norms (2026): ROE {bench['ROE_%']}%, Margin {bench['Net_Margin_%']}%. Identify leaders. Data: {df.to_markdown()}"
     return model.generate_content(prompt).text
 
 # --- 5. STREAMLIT DASHBOARD ---
-st.set_page_config(page_title="Max-Analysis Intelligence", layout="wide")
-st.title("🏦 Max-Analysis: Multi-Entity Intelligence Suite")
-st.markdown("Universal Financial Analysis & 2026 Sector Benchmarking")
+st.set_page_config(page_title="Max Financial Analyzer", layout="wide")
+st.title("🏦 Max-Analysis Intelligence Suite")
 
 files = st.file_uploader("Upload Annual Reports (PDF)", type="pdf", accept_multiple_files=True)
 
-if st.button("Execute Deep Peer Analysis"):
+if st.button("Execute Strategic Analysis"):
     if not files:
-        st.warning("Please upload at least one report.")
+        st.warning("Please upload reports.")
     else:
-        with st.spinner("Extracting and Benchmarking Firms..."):
-            # Update this line to use the safe loop helper
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
+        with st.spinner("Analyzing reports..."):
+            # SAFE ASYNCIO PATTERN FOR STREAMLIT
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                
             results = loop.run_until_complete(asyncio.gather(*[process_report(f, LLAMA_CLOUD_KEY, GEMINI_API_KEY) for f in files]))
-            
             df = pd.DataFrame(results).sort_values(["company_name", "fiscal_year"])
             
-            # --- DATA EXPORT ---
+            # --- DASHBOARD ---
+            st.success("Analysis Complete!")
             csv = df.to_csv(index=False).encode('utf-8')
-            st.download_button("📥 Export Full Dataset (CSV)", data=csv, file_name="peer_analysis_2026.csv", use_container_width=True)
+            st.download_button("📥 Export CSV", data=csv, file_name="analysis.csv", use_container_width=True)
             
-            # --- ANALYSIS TABS ---
-            t1, t2, t3, t4 = st.tabs(["📊 Performance", "🧬 DuPont Analysis", "🤖 AI Sector Scorecard", "📋 Raw Data"])
+            t1, t2, t3 = st.tabs(["📊 Performance", "🧬 DuPont Analysis", "🤖 AI Scorecard"])
             
             with t1:
-                st.subheader("Comparative Growth Trends")
-                c1, c2 = st.columns(2)
-                with c1: st.plotly_chart(px.line(df, x="fiscal_year", y="total_revenue", color="company_name", markers=True, title="Revenue Growth"), use_container_width=True)
-                with c2: st.plotly_chart(px.line(df, x="fiscal_year", y="net_income", color="company_name", markers=True, title="Net Profit Growth"), use_container_width=True)
-                st.plotly_chart(px.bar(df, x="fiscal_year", y="net_margin_%", color="company_name", barmode="group", title="Profitability Margin (%)"), use_container_width=True)
-
+                st.plotly_chart(px.line(df, x="fiscal_year", y="total_revenue", color="company_name", markers=True, title="Revenue Trends"), use_container_width=True)
+                st.plotly_chart(px.bar(df, x="fiscal_year", y="net_margin_%", color="company_name", barmode="group", title="Profitability Benchmarks"), use_container_width=True)
+            
             with t2:
-                st.subheader("DuPont ROE Decomposition")
-                st.info("Mapping Profitability (Net Margin) vs Efficiency (Asset Turnover). Bubble size = Leverage.")
+                st.subheader("DuPont ROE DNA")
                 
-                fig = px.scatter(df, x="asset_turnover", y="net_margin_%", size="equity_multiplier", color="company_name", hover_name="fiscal_year", title="ROE DNA: Efficiency vs Profitability")
+                fig = px.scatter(df, x="asset_turnover", y="net_margin_%", size="equity_multiplier", color="company_name", hover_name="fiscal_year", title="Efficiency vs Profitability (Bubble = Leverage)")
                 st.plotly_chart(fig, use_container_width=True)
-
+            
             with t3:
-                st.subheader("2025-2026 Strategic AI Scorecard")
+                st.subheader("2026 Sector Scorecard")
                 st.markdown(generate_ai_analysis(df, GEMINI_API_KEY))
-
-            with t4:
-                st.dataframe(df.style.format(precision=2))
