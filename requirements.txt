@@ -1,6 +1,6 @@
 streamlit
-pydantic
-google-generativeai
 pandas
-nest-asyncio
 requests
+google-generativeai
+plotly
+pydantic
