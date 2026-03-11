@@ -1,6 +1,0 @@
-streamlit
-llama-parse
-pydantic
-google-generativeai
-pandas
-nest-asyncio
