@@ -1,11 +1,6 @@
 streamlit
-pandas
-requests
-google-generativeai
-plotly
-pydantic
-tabulate
 yfinance
 pandas
-scikit-learn
+numpy
 plotly
+scikit-learn
