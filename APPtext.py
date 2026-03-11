@@ -45,11 +45,17 @@ async def parse_pdf_llamaparse(file_path: str, llama_api_key: str) -> str:
 def normalize_with_llm(raw_markdown: str, gemini_api_key: str) -> CanonicalFinancials:
     genai.configure(api_key=gemini_api_key)
     model = genai.GenerativeModel("gemini-2.5-flash")
+    
+    # We remove the [:30000] limit so Gemini can read the entire document
     prompt = f"""
-    You are an expert financial controller. Extract the financial tables, resolve idiosyncratic naming, clean up formatting, and detect the scale.
-    You MUST return ONLY a valid JSON object with exactly these keys and data types. Do not add any other text.
+    You are an expert financial controller. I am giving you the full Markdown text of a company's annual report.
+    You need to deeply scan this document to find the actual financial tables (Income Statement, Balance Sheet, etc.).
+    
+    Extract the metrics and return ONLY a valid JSON object matching exactly this structure. 
+    If a specific metric truly cannot be found anywhere in the entire text, use 0.0.
+    
     {{
-    "company_name": "string",
+    "company_name": "Actual Company Name",
     "fiscal_year": 2023,
     "revenue": 0.0,
     "net_income": 0.0,
@@ -59,12 +65,19 @@ def normalize_with_llm(raw_markdown: str, gemini_api_key: str) -> CanonicalFinan
     "current_liabilities": 0.0,
     "total_debt": 0.0
     }}
+    
     Raw Report Markdown:
-    {raw_markdown[:30000]}
+    {raw_markdown}
     """
-    response = model.generate_content(prompt, generation_config=genai.GenerationConfig(response_mime_type="application/json", temperature=0.0))
+    
+    # We increase the temperature slightly to 0.1 so it has a tiny bit of flexibility in searching
+    response = model.generate_content(
+        prompt, 
+        generation_config=genai.GenerationConfig(response_mime_type="application/json", temperature=0.1)
+    )
+    
     return CanonicalFinancials.model_validate_json(response.text)
-
+    
 def calculate_financial_metrics(data: CanonicalFinancials) -> dict:
     metrics = data.model_dump()
     net_profit_margin = data.net_income / data.revenue if data.revenue else 0
