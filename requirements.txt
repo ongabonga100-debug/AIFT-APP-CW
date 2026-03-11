@@ -4,3 +4,4 @@ requests
 google-generativeai
 plotly
 pydantic
+tabulate
