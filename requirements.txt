@@ -5,3 +5,7 @@ google-generativeai
 plotly
 pydantic
 tabulate
+yfinance
+pandas
+scikit-learn
+plotly
