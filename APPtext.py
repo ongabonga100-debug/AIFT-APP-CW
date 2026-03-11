@@ -20,7 +20,7 @@ GEMINI_API_KEY = "AIzaSyBwLn05CKZoN4JIf89MqSqsYr7bFcDu8y0"
 # -------------------------------------------------------------------
 # 1. DEFINE THE CANONICAL SCHEMA (PYDANTIC)
 # -------------------------------------------------------------------
-class CanonicalFinancials(BaseModel):
+class CanonicalFinancials:
     company_name: str = Field(description="The name of the corporate entity.")
     fiscal_year: int = Field(description="The fiscal year of the report.")
     revenue: float = Field(description="Total top-line revenue or net sales.")
