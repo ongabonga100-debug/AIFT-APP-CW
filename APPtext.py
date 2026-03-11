@@ -44,7 +44,7 @@ async def parse_pdf_llamaparse(file_path: str, llama_api_key: str) -> str:
 
 def normalize_with_llm(raw_markdown: str, gemini_api_key: str) -> CanonicalFinancials:
     genai.configure(api_key=gemini_api_key)
-    model = genai.GenerativeModel("gemini-1.5-flash")
+    model = genai.GenerativeModel("gemini-2.5-flash")
     prompt = f"""
     You are an expert financial controller. Extract the financial tables, resolve idiosyncratic naming, clean up formatting, and detect the scale.
     You MUST return ONLY a valid JSON object with exactly these keys and data types. Do not add any other text.
