@@ -9,8 +9,8 @@ import google.generativeai as genai
 from pydantic import BaseModel
 
 # DO NOT hardcode keys in production. Use st.secrets or environment variables.
-LLAMA_CLOUD_KEY = "YOUR_NEW_LLAMA_KEY"
-GEMINI_API_KEY = "YOUR_NEW_GEMINI_KEY"
+LLAMA_CLOUD_KEY = st.secrets["LLAMA_CLOUD_KEY"]
+GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
 
 class CanonicalFinancials(BaseModel):
     # These must be indented to belong to the class
