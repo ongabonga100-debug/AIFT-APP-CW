@@ -241,6 +241,38 @@ try:
             comp_data = {t: get_ticker(t)[0].get("marketCap", 0) for t in tickers}
             st.bar_chart(pd.Series(comp_data))
 
+# --- Feature 1: Health Check (Red Flags) ---
+def run_health_check(income, bs, cf):
+    flags = []
+    if income is not None and len(income.columns) > 1:
+        rev = income.loc["Total Revenue"]
+        if rev.iloc[0] < rev.iloc[1]: flags.append("⚠️ Revenue declined compared to last year.")
+        
+        ni = income.loc["Net Income"]
+        if ni.iloc[0] < ni.iloc[1]: flags.append("⚠️ Net Income is shrinking.")
+
+    if bs is not None and "Total Debt" in bs.index:
+        debt = bs.loc["Total Debt"]
+        if debt.iloc[0] > debt.iloc[1] * 1.2: flags.append("🚨 Debt increased by more than 20% this year.")
+        
+    if cf is not None and "Free Cash Flow" in cf.index:
+        fcf = cf.loc["Free Cash Flow"]
+        if fcf.iloc[0] < 0: flags.append("🚨 Company has Negative Free Cash Flow.")
+    
+    return flags if flags else ["✅ No major fundamental red flags detected."]
+
+# Feature: Export to CSV
+        csv = income.to_csv().encode('utf-8')
+        st.download_button("📥 Download Income Statement as CSV", csv, "income_stmt.csv", "text/csv")
+
+    elif page == "Valuation (DCF)":
+        st.subheader("Intrinsic Value Calculator (Simplified DCF)")
+        fcf = cf.loc["Free Cash Flow"].iloc[0] if "Free Cash Flow" in cf.index else 0
+        
+        st.write(f"Current Free Cash Flow: **{fmt_inr(fcf)}**")
+        growth = st.slider("Expected Growth Rate (%)", 1, 30, 10) / 100
+        discount = st.slider("Discount Rate (WACC %)", 5, 20, 10) / 100
+
 except Exception as e:
     st.error(f"Error fetching data: {e}")
 
