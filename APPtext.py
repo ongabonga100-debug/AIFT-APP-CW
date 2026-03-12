@@ -49,6 +49,7 @@ def sdiv(a, b):
 
 def years_data(df, rows):
     result, yrs = {}, []
+    if df is None or df.empty: return [], {}
     for col in reversed(list(df.columns)):
         yr = col.strftime("%Y") if hasattr(col, "strftime") else str(col)
         yrs.append(yr)
@@ -112,8 +113,7 @@ try:
             ("EPS", f"${info.get('trailingEps', 'N/A')}"),
         ])
         metric_row([
-            ("P/E Ratio", num(pe)), 
-            ("Dividend Yield", pct(dy) if dy else "N/A"),
+            ("P/E Ratio", num(pe)), ("Dividend Yield", pct(dy) if dy else "N/A"),
             ("52W High", f"${info.get('fiftyTwoWeekHigh', 'N/A')}"), 
             ("52W Low", f"${info.get('fiftyTwoWeekLow', 'N/A')}"),
         ])
