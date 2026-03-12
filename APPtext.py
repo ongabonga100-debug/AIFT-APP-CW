@@ -232,17 +232,91 @@ try:
             fig_fc.add_trace(go.Scatter(x=hist.index, y=hist["Close"], name="Historical"))
             fig_fc.add_trace(go.Scatter(x=future_dates, y=model.predict(future_X), name="Forecast", line=dict(dash='dash', color='#dc2626')))
             st.plotly_chart(fig_fc, use_container_width=True)
-
-    elif page == "Company Comparison":
+            
+elif page == "Company Comparison":
         st.subheader("Compare Multiple Companies")
-        selected_names = st.multiselect("Select companies", list(COMPANIES.keys()), default=list(COMPANIES.keys())[:3])
+        selected_names = st.multiselect(
+            "Select companies to compare", 
+            list(COMPANIES.keys()), 
+            default=list(COMPANIES.keys())[:3]
+        )
+        
         if len(selected_names) >= 2:
             tickers = [COMPANIES[n] for n in selected_names]
-            comp_data = {t: get_ticker(t)[0].get("marketCap", 0) for t in tickers}
-            st.bar_chart(pd.Series(comp_data))
+            
+            # 1. Fetch data for all selected tickers
+            comp_list = []
+            for t in tickers:
+                t_info = yf.Ticker(t).info
+                comp_list.append({
+                    "Ticker": t,
+                    "Market Cap": t_info.get("marketCap", 0),
+                    "Revenue (TTM)": t_info.get("totalRevenue", 0),
+                    "Net Income": t_info.get("netIncomeToCommon", 0),
+                    "P/E Ratio": t_info.get("trailingPE", np.nan),
+                    "ROE %": (t_info.get("returnOnEquity", 0) * 100),
+                    "Net Margin %": (t_info.get("profitMargins", 0) * 100)
+                })
+            
+            comparison_df = pd.DataFrame(comp_list).set_index("Ticker")
 
-except Exception as e:
-    st.error(f"Error fetching data: {e}")
+            # 2. Key Metrics Table
+            st.write("### 📊 Key Metrics Comparison")
+            # We format the numbers for the display table
+            styled_df = comparison_df.copy()
+            styled_df["Market Cap"] = styled_df["Market Cap"].apply(fmt)
+            styled_df["Revenue (TTM)"] = styled_df["Revenue (TTM)"].apply(fmt)
+            styled_df["Net Income"] = styled_df["Net Income"].apply(fmt)
+            styled_df["ROE %"] = styled_df["ROE %"].apply(lambda x: f"{x:.2f}%")
+            styled_df["Net Margin %"] = styled_df["Net Margin %"].apply(lambda x: f"{x:.2f}%")
+            
+            st.dataframe(styled_df, use_container_width=True)
 
-st.divider()
-st.caption("Data from Yahoo Finance. For educational purposes only - not financial advice.")
+            # 3. Visual Comparison Charts
+            st.write("### 📈 Visual Benchmarking")
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Market Cap Bar Chart
+                fig_cap = px.bar(
+                    comparison_df, 
+                    y="Market Cap", 
+                    title="Market Capitalization Comparison",
+                    labels={"Market Cap": "Market Cap ($)"},
+                    color_discrete_sequence=["#2563eb"]
+                )
+                st.plotly_chart(fig_cap, use_container_width=True)
+
+            with col2:
+                # ROE vs Net Margin Scatter Plot
+                fig_scatter = px.scatter(
+                    comparison_df, 
+                    x="Net Margin %", 
+                    y="ROE %", 
+                    size="Market Cap",
+                    hover_name=comparison_df.index,
+                    title="Efficiency: ROE vs. Net Margin",
+                    labels={"Net Margin %": "Net Profit Margin (%)", "ROE %": "Return on Equity (%)"}
+                )
+                st.plotly_chart(fig_scatter, use_container_width=True)
+
+            # 4. Normalized Stock Performance (Last 1 Year)
+            st.write("### 🕒 Relative Stock Performance (Last 1 Year)")
+            fig_perf = go.Figure()
+            for t in tickers:
+                h = get_history(t, "1y")
+                if not h.empty:
+                    # Normalize to 100 at the start of the period
+                    relative_price = (h["Close"] / h["Close"].iloc[0]) * 100
+                    fig_perf.add_trace(go.Scatter(x=h.index, y=relative_price, name=t, mode='lines'))
+            
+            fig_perf.update_layout(
+                title="Stock Performance (Base 100)",
+                yaxis_title="Normalized Price",
+                height=500
+            )
+            st.plotly_chart(fig_perf, use_container_width=True)
+            st.info("Performance is normalized to 100 to compare how much $100 invested in each stock would be worth today.")
+
+        else:
+            st.info("Please select at least 2 companies to begin the comparison.")
