@@ -215,23 +215,82 @@ try:
         st.subheader("Stock Price Analysis & Forecasting")
         period = st.selectbox("Time Period", ["1y", "2y", "5y", "10y", "max"], index=2)
         hist = get_history(ticker, period)
+        
         if not hist.empty:
-            fig = go.Figure(go.Candlestick(x=hist.index, open=hist["Open"], high=hist["High"], low=hist["Low"], close=hist["Close"]))
-            fig.update_layout(title=f"{ticker} Stock Price", height=500, xaxis_rangeslider_visible=False)
+            # 1. Calculate Moving Averages
+            hist['SMA_50'] = hist['Close'].rolling(window=50).mean()
+            hist['SMA_200'] = hist['Close'].rolling(window=200).mean()
+
+            # 2. Plot Candlestick with SMAs
+            fig = go.Figure(go.Candlestick(
+                x=hist.index, open=hist["Open"], high=hist["High"], low=hist["Low"], close=hist["Close"], name="Price"
+            ))
+            
+            # Add 50-Day SMA (Orange)
+            fig.add_trace(go.Scatter(
+                x=hist.index, y=hist['SMA_50'], mode='lines', name='50-Day SMA', line=dict(color='#f59e0b', width=2)
+            ))
+            
+            # Add 200-Day SMA (Blue)
+            fig.add_trace(go.Scatter(
+                x=hist.index, y=hist['SMA_200'], mode='lines', name='200-Day SMA', line=dict(color='#2563eb', width=2)
+            ))
+            
+            # Remove bottom margin so it sits flush with the volume chart
+            fig.update_layout(title=f"{ticker} Price & SMAs", height=500, xaxis_rangeslider_visible=False, margin=dict(b=0))
             st.plotly_chart(fig, use_container_width=True)
             
-            st.subheader("Price Forecast (Linear Regression)")
-            days = st.slider("Forecast Days", 7, 90, 30)
+            # 3. Plot Volume Chart
+            fig_vol = go.Figure(go.Bar(
+                x=hist.index, y=hist["Volume"], name="Volume", marker_color="#64748b"
+            ))
+            # Remove top margin to pull it close to the price chart
+            fig_vol.update_layout(height=200, margin=dict(t=0, b=0), yaxis_title="Trading Volume")
+            st.plotly_chart(fig_vol, use_container_width=True)
+            
+            # Explainer Box
+            st.info("""
+            **Technical Signals:**
+            * 📈 **Golden Cross:** 50-Day crosses *above* 200-Day (Bullish / Buy Signal)
+            * 📉 **Death Cross:** 50-Day crosses *below* 200-Day (Bearish / Sell Signal)
+            * 📊 **Volume:** A price breakout accompanied by a spike in volume is a strong confirmation of a trend.
+            """)
+
+            # 4. Forecast Logic (Polynomial Regression)
+            st.subheader("Price Forecast (Polynomial Regression)")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                days = st.slider("Forecast Days", 7, 90, 30)
+            with col2:
+                degree = st.slider("Curve Complexity (Polynomial Degree)", 1, 4, 2, 
+                                   help="1 = Straight Line, 2 = Simple Curve, 3+ = Complex Curves")
+            
+            # Prepare historical data
             X = np.arange(len(hist)).reshape(-1, 1)
-            model = LinearRegression().fit(X, hist["Close"].values)
+            y = hist["Close"].values
+            
+            from sklearn.preprocessing import PolynomialFeatures
+            poly = PolynomialFeatures(degree=degree)
+            X_poly = poly.fit_transform(X)
+            
+            # Train the model
+            model = LinearRegression().fit(X_poly, y)
+            
+            # Predict
             future_X = np.arange(len(hist), len(hist) + days).reshape(-1, 1)
+            future_X_poly = poly.transform(future_X)
+            predictions = model.predict(future_X_poly)
+            
             future_dates = pd.date_range(start=hist.index[-1] + pd.Timedelta(days=1), periods=days, freq="B")
             
+            # Plot historical and forecast
             fig_fc = go.Figure()
-            fig_fc.add_trace(go.Scatter(x=hist.index, y=hist["Close"], name="Historical"))
-            fig_fc.add_trace(go.Scatter(x=future_dates, y=model.predict(future_X), name="Forecast", line=dict(dash='dash', color='#dc2626')))
+            fig_fc.add_trace(go.Scatter(x=hist.index, y=hist["Close"], name="Historical Price"))
+            fig_fc.add_trace(go.Scatter(x=future_dates, y=predictions, name=f"Forecast (Degree {degree})", line=dict(dash='dash', color='#dc2626', width=3)))
+            
             st.plotly_chart(fig_fc, use_container_width=True)
-
+            
     elif page == "Company Comparison":
         st.subheader("Compare Multiple Companies")
         selected_names = st.multiselect("Select companies to compare", list(COMPANIES.keys()), default=list(COMPANIES.keys())[:3])
