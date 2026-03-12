@@ -380,7 +380,7 @@ try:
 except Exception as e:
     st.error(f"Error fetching data: {e}")
 
-elif page == "Sentiment":
+elif page == "Overview":
         pe = info.get("trailingPE")
         dy = info.get("dividendYield")
         metric_row([
