@@ -79,10 +79,10 @@ def metric_row(items):
         col.metric(label, val)
 
 def pct(v):
-    return f"{v * 100:.1f}%" if isinstance(v, (int, float)) and v is not None else "N/A"
+    return f"{v * 100:.1f}%" if isinstance(v, (int, float)) and not pd.isna(v) else "N/A"
 
 def num(v):
-    return f"{v:.2f}" if isinstance(v, (int, float)) and v is not None else "N/A"
+    return f"{v:.2f}" if isinstance(v, (int, float)) and not pd.isna(v) else "N/A"
 
 # ── Sidebar ──
 st.sidebar.title("Financial Analyzer")
@@ -101,7 +101,6 @@ st.title("Financial Statement Analyzer")
 st.caption(f"Analyzing: **{ticker}**")
 
 try:
-    # Fetch Data
     info, income, bs, cf = get_ticker(ticker)
 
     if page == "Overview":
@@ -114,7 +113,7 @@ try:
             ("EPS", f"${info.get('trailingEps', 'N/A')}"),
         ])
         metric_row([
-            ("P/E Ratio", num(pe)), ("Dividend Yield", pct(dy) if dy else "N/A"),
+            ("P/E Ratio", num(pe)), ("Dividend Yield", pct(dy)),
             ("52W High", f"${info.get('fiftyTwoWeekHigh', 'N/A')}"), 
             ("52W Low", f"${info.get('fiftyTwoWeekLow', 'N/A')}"),
         ])
@@ -195,12 +194,12 @@ try:
             ("Liquidity", [
                 ("Current Ratio", num(info.get("currentRatio"))), 
                 ("Quick Ratio", num(info.get("quickRatio"))),
-                ("Cash Ratio", num(sdiv(sget(bs, "Cash And Cash Equivalents"), sget(bs, "Current Liabilities"))) if bs is not None else "N/A"),
+                ("Cash Ratio", num(sdiv(sget(bs, "Cash And Cash Equivalents"), sget(bs, "Current Liabilities")))),
             ]),
             ("Leverage", [
                 ("Debt to Equity", num(info.get("debtToEquity", 0) / 100) if info.get("debtToEquity") else "N/A"),
-                ("Debt to Assets", num(sdiv(sget(bs, "Total Debt"), sget(bs, "Total Assets"))) if bs is not None else "N/A"),
-                ("Equity Multiplier", num(sdiv(sget(bs, "Total Assets"), sget(bs, "Stockholders Equity"))) if bs is not None else "N/A"),
+                ("Debt to Assets", num(sdiv(sget(bs, "Total Debt"), sget(bs, "Total Assets")))),
+                ("Equity Multiplier", num(sdiv(sget(bs, "Total Assets"), sget(bs, "Stockholders Equity")))),
             ]),
             ("Valuation", [
                 ("P/E Ratio", num(info.get("trailingPE"))), 
@@ -240,39 +239,82 @@ try:
         if len(selected_names) >= 2:
             tickers = [COMPANIES[n] for n in selected_names]
             comp_list = []
-            for t in tickers:
-                t_info = yf.Ticker(t).info
-                comp_list.append({
-                    "Ticker": t,
-                    "Market Cap": t_info.get("marketCap", 0),
-                    "Revenue (TTM)": t_info.get("totalRevenue", 0),
-                    "Net Income": t_info.get("netIncomeToCommon", 0),
-                    "P/E Ratio": t_info.get("trailingPE", np.nan),
-                    "ROE %": (t_info.get("returnOnEquity", 0) * 100),
-                    "Net Margin %": (t_info.get("profitMargins", 0) * 100)
-                })
+            
+            with st.spinner("Fetching data for comparison..."):
+                for t in tickers:
+                    t_info = yf.Ticker(t).info
+                    comp_list.append({
+                        "Ticker": t,
+                        "Market Cap": t_info.get("marketCap", 0),
+                        "Revenue (TTM)": t_info.get("totalRevenue", 0),
+                        "Net Income": t_info.get("netIncomeToCommon", 0),
+                        "P/E Ratio": t_info.get("trailingPE", np.nan),
+                        "ROE %": (t_info.get("returnOnEquity", 0) * 100) if t_info.get("returnOnEquity") else np.nan,
+                        "Net Margin %": (t_info.get("profitMargins", 0) * 100) if t_info.get("profitMargins") else np.nan,
+                        "Debt/Equity": t_info.get("debtToEquity", np.nan),
+                        "Div Yield %": (t_info.get("dividendYield", 0) * 100) if t_info.get("dividendYield") else 0
+                    })
             
             comparison_df = pd.DataFrame(comp_list).set_index("Ticker")
-            st.write("### 📊 Key Metrics Comparison")
             
+            # 1. Key Metrics Table
+            st.write("### 📊 Fundamental Metrics Matrix")
             styled_df = comparison_df.copy()
             styled_df["Market Cap"] = styled_df["Market Cap"].apply(fmt)
             styled_df["Revenue (TTM)"] = styled_df["Revenue (TTM)"].apply(fmt)
             styled_df["Net Income"] = styled_df["Net Income"].apply(fmt)
-            styled_df["ROE %"] = styled_df["ROE %"].apply(lambda x: f"{x:.2f}%")
-            styled_df["Net Margin %"] = styled_df["Net Margin %"].apply(lambda x: f"{x:.2f}%")
+            styled_df["P/E Ratio"] = styled_df["P/E Ratio"].apply(num)
+            styled_df["ROE %"] = styled_df["ROE %"].apply(lambda x: f"{x:.2f}%" if not pd.isna(x) else "N/A")
+            styled_df["Net Margin %"] = styled_df["Net Margin %"].apply(lambda x: f"{x:.2f}%" if not pd.isna(x) else "N/A")
+            styled_df["Debt/Equity"] = styled_df["Debt/Equity"].apply(lambda x: num(x / 100) if not pd.isna(x) else "N/A")
+            styled_df["Div Yield %"] = styled_df["Div Yield %"].apply(lambda x: f"{x:.2f}%" if x > 0 else "N/A")
+            
             st.dataframe(styled_df, use_container_width=True)
 
-            st.write("### 📈 Relative Stock Performance (Last 1 Year)")
+            # 2. Side-by-Side Charts
+            st.write("### 📈 Visual Benchmarking")
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Grouped Bar for Scale (Revenue vs Net Income)
+                fig_bar = go.Figure(data=[
+                    go.Bar(name='Revenue', x=comparison_df.index, y=comparison_df['Revenue (TTM)'], marker_color="#2563eb"),
+                    go.Bar(name='Net Income', x=comparison_df.index, y=comparison_df['Net Income'], marker_color="#16a34a")
+                ])
+                fig_bar.update_layout(barmode='group', title="Scale: Revenue vs Net Income", yaxis_title="Amount ($)")
+                st.plotly_chart(fig_bar, use_container_width=True)
+
+            with col2:
+                # Scatter Plot for Valuation vs Profitability
+                fig_scatter = px.scatter(
+                    comparison_df.reset_index(), 
+                    x="P/E Ratio", 
+                    y="ROE %", 
+                    size="Market Cap", 
+                    color="Ticker", 
+                    hover_name="Ticker",
+                    title="Valuation (P/E) vs Efficiency (ROE)",
+                    labels={"P/E Ratio": "P/E Ratio (Lower is Cheaper)", "ROE %": "Return on Equity (Higher is Better)"}
+                )
+                st.plotly_chart(fig_scatter, use_container_width=True)
+
+            # 3. Normalized Stock Performance
+            st.write("### 🕒 Relative Stock Performance (Last 1 Year)")
             fig_perf = go.Figure()
             for t in tickers:
                 h = get_history(t, "1y")
                 if not h.empty:
+                    # Base 100 Normalization
                     relative_price = (h["Close"] / h["Close"].iloc[0]) * 100
                     fig_perf.add_trace(go.Scatter(x=h.index, y=relative_price, name=t, mode='lines'))
             
-            fig_perf.update_layout(title="Performance (Base 100)", yaxis_title="Normalized Price", height=500)
+            fig_perf.update_layout(
+                title="Performance (Base 100 - Start of Year = $100)", 
+                yaxis_title="Normalized Price", 
+                height=500
+            )
             st.plotly_chart(fig_perf, use_container_width=True)
+            
         else:
             st.info("Please select at least 2 companies to begin the comparison.")
 
