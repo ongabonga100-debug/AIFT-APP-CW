@@ -380,5 +380,78 @@ try:
 except Exception as e:
     st.error(f"Error fetching data: {e}")
 
+elif page == "Sentiment":
+        pe = info.get("trailingPE")
+        dy = info.get("dividendYield")
+        metric_row([
+            ("Market Cap", fmt(info.get("marketCap", 0))), 
+            ("Revenue (TTM)", fmt(info.get("totalRevenue", 0))),
+            ("Net Income", fmt(info.get("netIncomeToCommon", 0))), 
+            ("EPS", f"${info.get('trailingEps', 'N/A')}"),
+        ])
+        metric_row([
+            ("P/E Ratio", num(pe)), ("Dividend Yield", pct(dy) if dy else "N/A"),
+            ("52W High", f"${info.get('fiftyTwoWeekHigh', 'N/A')}"), 
+            ("52W Low", f"${info.get('fiftyTwoWeekLow', 'N/A')}"),
+        ])
+        
+        st.subheader("Company Profile")
+        st.write(info.get("longBusinessSummary", "No description available."))
+        
+        hist = get_history(ticker, "1y")
+        if not hist.empty:
+            fig = px.line(hist, y="Close", title=f"{ticker} - 1 Year Stock Price")
+            fig.update_layout(height=400)
+            st.plotly_chart(fig, use_container_width=True)
+
+        # --- NEW: News & Sentiment Section ---
+        st.divider()
+        st.subheader("📰 Latest News & Market Sentiment")
+        
+        news_items = yf.Ticker(ticker).news
+        if news_items:
+            # Simple keyword-based sentiment dictionaries
+            bullish_words = ['surge', 'jump', 'gain', 'profit', 'buy', 'upgrade', 'bull', 'high', 'record', 'dividend', 'growth', 'beat', 'soar']
+            bearish_words = ['drop', 'fall', 'loss', 'sell', 'downgrade', 'bear', 'low', 'miss', 'plunge', 'lawsuit', 'penalty', 'decline', 'cut']
+            
+            total_score = 0
+            
+            # Create a clean layout for the news
+            for item in news_items[:5]: # Show top 5 recent news articles
+                title = item.get('title', '')
+                publisher = item.get('publisher', 'Unknown')
+                link = item.get('link', '#')
+                
+                # Calculate sentiment for this specific headline
+                title_lower = title.lower()
+                bull_count = sum(1 for word in bullish_words if word in title_lower)
+                bear_count = sum(1 for word in bearish_words if word in title_lower)
+                score = bull_count - bear_count
+                total_score += score
+                
+                # Assign a visual tag based on the score
+                if score > 0:
+                    sentiment_tag = "🟢 Bullish"
+                elif score < 0:
+                    sentiment_tag = "🔴 Bearish"
+                else:
+                    sentiment_tag = "⚪ Neutral"
+                
+                st.markdown(f"**[{title}]({link})**")
+                st.caption(f"Published by: {publisher} | Sentiment: {sentiment_tag}")
+                st.write("---")
+            
+            # Overall Sentiment Conclusion
+            st.write("### 🧠 Overall News Sentiment")
+            if total_score > 1:
+                st.success("The current news cycle is predominantly **Bullish**.")
+            elif total_score < -1:
+                st.error("The current news cycle is predominantly **Bearish**.")
+            else:
+                st.info("The current news cycle is predominantly **Neutral**.")
+                
+        else:
+            st.info("No recent news available for this ticker.")
+
 st.divider()
 st.caption("Data from Yahoo Finance. For educational purposes only - not financial advice.")
